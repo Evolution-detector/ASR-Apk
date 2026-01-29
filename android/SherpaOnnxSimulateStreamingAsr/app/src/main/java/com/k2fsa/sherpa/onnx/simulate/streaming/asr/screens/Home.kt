@@ -12,14 +12,13 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement  
 import androidx.compose.foundation.layout.Box  
 import androidx.compose.foundation.layout.Column  
-import androidx.compose.foundation.layout.PaddingValues  
 import androidx.compose.foundation.layout.Row  
 import androidx.compose.foundation.layout.Spacer  
 import androidx.compose.foundation.layout.fillMaxHeight  
 import androidx.compose.foundation.layout.fillMaxSize  
 import androidx.compose.foundation.layout.fillMaxWidth  
-import androidx.compose.foundation.layout.width  
 import androidx.compose.foundation.layout.padding  
+import androidx.compose.foundation.layout.width  
 import androidx.compose.foundation.rememberScrollState  
 import androidx.compose.foundation.verticalScroll  
 import androidx.compose.material3.Button  
@@ -60,7 +59,7 @@ fun HomeScreen() {
   
     val activity = LocalContext.current as Activity  
     var isStarted by remember { mutableStateOf(false) }  
-    var recognizedText by remember { mutableStateOf("") }  // 改为单个字符串  
+    var recognizedText by remember { mutableStateOf("") }  
     val scrollState = rememberScrollState()  
     val coroutineScope = rememberCoroutineScope()  
   
@@ -139,9 +138,8 @@ fun HomeScreen() {
                     var isSpeechStarted = false  
                     var startTime = System.currentTimeMillis()  
                     var lastText = ""  
-                    var added = false  
                     var speechStartOffset = 0  
-  
+                    var currentSegmentText = ""  // 新增：当前语音段的文本  
   
                     while (isStarted) {  
                         for (s in samplesChannel) {  
@@ -166,6 +164,8 @@ fun HomeScreen() {
                                         speechStartOffset = 0  
                                     }  
                                     startTime = System.currentTimeMillis()  
+                                    // 新语音段开始时，清空当前段文本  
+                                    currentSegmentText = ""  
                                 }  
                             }  
   
@@ -185,12 +185,19 @@ fun HomeScreen() {
                                 lastText = result.text  
   
                                 if (lastText.isNotBlank()) {  
-                                    if (!added || recognizedText.isEmpty()) {  
-                                        recognizedText = lastText  
-                                        added = true  
+                                    // 只更新当前段文本，不直接更新显示文本  
+                                    currentSegmentText = lastText  
+                                      
+                                    // 实时显示当前段的结果  
+                                    if (recognizedText.isEmpty()) {  
+                                        recognizedText = currentSegmentText  
                                     } else {  
-                                        // 追加文本，用全角逗号分隔  
-                                        recognizedText = recognizedText + "，" + lastText  
+                                        // 检查是否需要替换最后一段  
+                                        val segments = recognizedText.split("，").toMutableList()  
+                                        if (segments.isNotEmpty()) {  
+                                            segments[segments.size - 1] = currentSegmentText  
+                                            recognizedText = segments.joinToString("，")  
+                                        }  
                                     }  
   
                                     coroutineScope.launch {  
@@ -201,7 +208,6 @@ fun HomeScreen() {
   
                                 startTime = System.currentTimeMillis()  
                             }  
-  
   
                             while (!SimulateStreamingAsr.vad.empty()) {  
                                 val stream = SimulateStreamingAsr.recognizer.createStream()  
@@ -216,19 +222,26 @@ fun HomeScreen() {
                                 isSpeechStarted = false  
                                 SimulateStreamingAsr.vad.pop()  
   
+                                // VAD结束时，确认最终结果  
+                                if (result.text.isNotBlank()) {  
+                                    if (recognizedText.isEmpty()) {  
+                                        recognizedText = result.text  
+                                    } else {  
+                                        // 替换最后一段为最终结果  
+                                        val segments = recognizedText.split("，").toMutableList()  
+                                        if (segments.isNotEmpty()) {  
+                                            segments[segments.size - 1] = result.text  
+                                            recognizedText = segments.joinToString("，")  
+                                        }  
+                                    }  
+                                }  
+  
                                 buffer = arrayListOf()  
                                 offset = 0  
-                                if (lastText.isNotBlank()) {  
-                                    if (added && recognizedText.isNotEmpty()) {  
-                                        recognizedText = recognizedText + "，" + result.text  
-                                    } else {  
-                                        recognizedText = result.text  
-                                    }  
+                                currentSegmentText = ""  
   
-                                    coroutineScope.launch {  
-                                        scrollState.scrollTo(scrollState.maxValue)  
-                                    }  
-                                    added = false  
+                                coroutineScope.launch {  
+                                    scrollState.scrollTo(scrollState.maxValue)  
                                 }  
                             }  
                         }  
