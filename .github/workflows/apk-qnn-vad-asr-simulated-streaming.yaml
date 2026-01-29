@@ -63,7 +63,7 @@ jobs:
         shell: bash  
         run: |  
           cd scripts/apk  
-          ./generate-qnn-vad-asr-apk-script.py --total ${{ matrix.total }} --index ${{ matrix.index }} --arch arm64-v8a  
+          ./generate-qnn-vad-asr-apk-script.py --total ${{ matrix.total }} --index ${{ matrix.index }}   
           chmod +x build-apk-qnn-vad-asr-simulate-streaming.sh  
           mv -v ./build-apk-qnn-vad-asr-simulate-streaming.sh ../..  
   
