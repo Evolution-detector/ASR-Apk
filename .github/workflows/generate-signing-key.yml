@@ -6,22 +6,34 @@ on:
 jobs:  
   generate-key:  
     runs-on: ubuntu-latest  
+    name: Generate Android Signing Key  
+      
     steps:  
       - name: Generate release keystore  
         shell: bash  
         run: |  
-          keytool -genkey -v -keystore release.keystore \  
-            -alias my-key-alias -keyalg RSA -keysize 2048 \  
+          # 生成正式签名密钥库  
+          keytool -genkeypair -v \  
+            -keystore release.keystore \  
+            -alias release-key \  
+            -keyalg RSA \  
+            -keysize 2048 \  
             -validity 10000 \  
-            -storepass your_store_password \  
-            -keypass your_key_password \  
-            -dname "CN=Your App Name, OU=Your Org, O=Your Company, L=Your City, ST=Your State, C=Your Country"  
+            -storepass release123 \  
+            -keypass release123 \  
+            -dname "CN=Release Key, OU=Mobile, O=Your Company, L=Your City, ST=Your State, C=US"  
             
-          # 转换为base64  
-          base64 -w 0 release.keystore > keystore.base64  
-          echo "KEYSTORE_BASE64=$(cat keystore.base64)" >> $GITHUB_ENV  
+          echo "Keystore generated successfully"  
+          ls -la release.keystore  
             
-          echo "Generated keystore. Add this to your repository secrets:"  
-          echo "ANDROID_SIGNING_KEY: $KEYSTORE_BASE64"  
-          echo "ANDROID_SIGNING_KEY_ALIAS: my-key-alias"  
-          echo "ANDROID_SIGNING_KEY_STORE_PASSWORD: your_store_password"
+      - name: Display keystore info  
+        shell: bash  
+        run: |  
+          keytool -list -v -keystore release.keystore -storepass release123  
+        
+      - name: Upload keystore as artifact  
+        uses: actions/upload-artifact@v4  
+        with:  
+          name: android-signing-keystore  
+          path: release.keystore  
+          retention-days: 30
