@@ -86,9 +86,42 @@ jobs:
         run: |  
           ls -lh ./apks/  
   
-      # 跳过签名步骤（如果没有签名密钥）  
-      # - uses: r0adkll/sign-android-release@v1  
-      #   if: false  
+      # 签名 APK  
+      - uses: r0adkll/sign-android-release@v1  
+        name: Sign app APK  
+        with:  
+          releaseDirectory: ./apks  
+          signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}  
+          alias: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}  
+          keyStorePassword: ${{ secrets.ANDROID_SIGNING_KEY_STORE_PASSWORD }}  
+        env:  
+          BUILD_TOOLS_VERSION: ${{ env.BUILD_TOOL_VERSION }}  
+  
+      - name: Display APK after signing  
+        shell: bash  
+        run: |  
+          ls -lh ./apks/  
+  
+      - name: Rename APK after signing  
+        shell: bash  
+        run: |  
+          cd apks  
+          rm -fv signingKey.jks  
+          rm -fv *.apk.idsig  
+          rm -fv *-aligned.apk  
+  
+          all_apks=$(ls -1 *-signed.apk)  
+          echo "----"  
+          echo $all_apks  
+          echo "----"  
+          for apk in ${all_apks[@]}; do  
+            n=$(echo $apk | sed -e s/-signed//)  
+            mv -v $apk $n  
+          done  
+  
+          cd ..  
+  
+          ls -lh ./apks/  
   
       - name: Create Release and Upload APKs  
         uses: softprops/action-gh-release@v1  
