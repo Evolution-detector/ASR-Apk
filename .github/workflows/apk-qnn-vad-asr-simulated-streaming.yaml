@@ -59,11 +59,17 @@ jobs:
           BUILD_TOOL_VERSION=$(ls /usr/local/lib/android/sdk/build-tools/ | tail -n 1)  
           echo "BUILD_TOOL_VERSION=$BUILD_TOOL_VERSION" >> $GITHUB_ENV  
   
+      - name: Set version variable  
+        shell: bash  
+        run: |  
+          SHERPA_ONNX_VERSION=$(grep "SHERPA_ONNX_VERSION" ./CMakeLists.txt  | cut -d " " -f 2  | cut -d '"' -f 2)  
+          echo "SHERPA_ONNX_VERSION=$SHERPA_ONNX_VERSION" >> $GITHUB_ENV  
+  
       - name: Generate build script  
         shell: bash  
         run: |  
           cd scripts/apk  
-          ./generate-qnn-vad-asr-apk-script.py --total ${{ matrix.total }} --index ${{ matrix.index }}   
+          ./generate-qnn-vad-asr-apk-script.py --total ${{ matrix.total }} --index ${{ matrix.index }}  
           chmod +x build-apk-qnn-vad-asr-simulate-streaming.sh  
           mv -v ./build-apk-qnn-vad-asr-simulate-streaming.sh ../..  
   
@@ -84,23 +90,16 @@ jobs:
       # - uses: r0adkll/sign-android-release@v1  
       #   if: false  
   
-      - name: Create Release  
-        id: create_release  
-        uses: actions/create-release@v1  
+      - name: Create Release and Upload APKs  
+        uses: softprops/action-gh-release@v1  
         env:  
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
         with:  
           tag_name: qnn-vad-asr-simulated-streaming-${{ github.run_number }}  
-          release_name: QNN VAD ASR Simulated Streaming ${{ github.run_number }}  
+          name: QNN VAD ASR Simulated Streaming ${{ github.run_number }}  
           draft: false  
           prerelease: false  
-  
-      - name: Upload APK to Release  
-        uses: actions/upload-release-asset@v1  
-        env:  
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
-        with:  
-          upload_url: ${{ steps.create_release.outputs.upload_url }}  
-          asset_path: ./apks/sherpa-onnx-*-arm64-v8a-*.apk  
-          asset_name: sherpa-onnx-qnn-vad-asr-simulated-streaming-arm64-v8a.apk  
-          asset_content_type: application/vnd.android.package-archive
+          files: |  
+            ./apks/sherpa-onnx-${{ env.SHERPA_ONNX_VERSION }}-qnn-arm64-v8a-simulated_streaming_asr-zh_en_ko_ja_yue-8-seconds-sense_voice_2024_07_17_int8.apk  
+            ./apks/sherpa-onnx-${{ env.SHERPA_ONNX_VERSION }}-qnn-arm64-v8a-simulated_streaming_asr-zh-8-seconds-zipformer_ctc_2025_07_03_int8.apk  
+            ./apks/sherpa-onnx-${{ env.SHERPA_ONNX_VERSION }}-qnn-arm64-v8a-simulated_streaming_asr-zh-5-seconds-paraformer_zh_2025_10_07_int8.apk
