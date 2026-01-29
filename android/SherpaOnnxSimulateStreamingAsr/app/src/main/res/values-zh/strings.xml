@@ -1,0 +1,7 @@
+<resources>  
+    <string name="app_name">离线语音识别工具</string>  
+    <string name="start">开始</string>  
+    <string name="stop">停止</string>  
+    <string name="copy">复制</string>  
+    <string name="clear">清空</string>  
+</resources>
