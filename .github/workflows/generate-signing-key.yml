@@ -1,0 +1,27 @@
+name: Generate Signing Key  
+  
+on:  
+  workflow_dispatch:  
+  
+jobs:  
+  generate-key:  
+    runs-on: ubuntu-latest  
+    steps:  
+      - name: Generate release keystore  
+        shell: bash  
+        run: |  
+          keytool -genkey -v -keystore release.keystore \  
+            -alias my-key-alias -keyalg RSA -keysize 2048 \  
+            -validity 10000 \  
+            -storepass your_store_password \  
+            -keypass your_key_password \  
+            -dname "CN=Your App Name, OU=Your Org, O=Your Company, L=Your City, ST=Your State, C=Your Country"  
+            
+          # 转换为base64  
+          base64 -w 0 release.keystore > keystore.base64  
+          echo "KEYSTORE_BASE64=$(cat keystore.base64)" >> $GITHUB_ENV  
+            
+          echo "Generated keystore. Add this to your repository secrets:"  
+          echo "ANDROID_SIGNING_KEY: $KEYSTORE_BASE64"  
+          echo "ANDROID_SIGNING_KEY_ALIAS: my-key-alias"  
+          echo "ANDROID_SIGNING_KEY_STORE_PASSWORD: your_store_password"
