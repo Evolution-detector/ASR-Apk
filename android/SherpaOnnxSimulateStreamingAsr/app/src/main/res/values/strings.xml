@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">SimulateStreamingAsr</string>
+    <string name="app_name">Offline Speech Recognition</string>
     <string name="start">Start</string>
     <string name="stop">Stop</string>
     <string name="copy">Copy</string>
