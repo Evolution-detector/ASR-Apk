@@ -1,0 +1,106 @@
+name: apk-qnn-vad-asr-simulated-streaming  
+  
+on:  
+  workflow_dispatch:  
+  
+concurrency:  
+  group: apk-qnn-vad-asr-simulated-streaming-${{ github.ref }}  
+  cancel-in-progress: true  
+  
+permissions:  
+  contents: write  
+  
+jobs:  
+  simulated_streaming_asr:  
+    runs-on: ubuntu-latest  
+    name: Build QNN arm64-v8a APK  
+    strategy:  
+      fail-fast: false  
+      matrix:  
+        os: [ubuntu-latest]  
+        total: ["1"]  
+        index: ["0"]  
+  
+    steps:  
+      - uses: actions/checkout@v4  
+        with:  
+          fetch-depth: 0  
+  
+      - name: Update version  
+        shell: bash  
+        run: |  
+          ./new-release.sh  
+          git diff .  
+  
+      - uses: actions/setup-java@v4  
+        with:  
+          distribution: 'temurin'  
+          java-version: '21'  
+  
+      - name: ccache  
+        uses: hendrikmuhs/ccache-action@v1.2  
+        with:  
+          key: ${{ matrix.os }}-android-qnn  
+  
+      - name: Display NDK HOME  
+        shell: bash  
+        run: |  
+          echo "ANDROID_NDK_LATEST_HOME: ${ANDROID_NDK_LATEST_HOME}"  
+          ls -lh ${ANDROID_NDK_LATEST_HOME}  
+  
+      - name: Install Python dependencies  
+        shell: bash  
+        run: |  
+          python3 -m pip install --upgrade pip jinja2  
+  
+      - name: Setup build tool version variable  
+        shell: bash  
+        run: |  
+          BUILD_TOOL_VERSION=$(ls /usr/local/lib/android/sdk/build-tools/ | tail -n 1)  
+          echo "BUILD_TOOL_VERSION=$BUILD_TOOL_VERSION" >> $GITHUB_ENV  
+  
+      - name: Generate build script  
+        shell: bash  
+        run: |  
+          cd scripts/apk  
+          ./generate-qnn-vad-asr-apk-script.py --total ${{ matrix.total }} --index ${{ matrix.index }} --arch arm64-v8a  
+          chmod +x build-apk-qnn-vad-asr-simulate-streaming.sh  
+          mv -v ./build-apk-qnn-vad-asr-simulate-streaming.sh ../..  
+  
+      - name: build APK  
+        shell: bash  
+        run: |  
+          export CMAKE_CXX_COMPILER_LAUNCHER=ccache  
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"  
+          export ANDROID_NDK=$ANDROID_NDK_LATEST_HOME  
+          ./build-apk-qnn-vad-asr-simulate-streaming.sh  
+  
+      - name: Display APK  
+        shell: bash  
+        run: |  
+          ls -lh ./apks/  
+  
+      # 跳过签名步骤（如果没有签名密钥）  
+      # - uses: r0adkll/sign-android-release@v1  
+      #   if: false  
+  
+      - name: Create Release  
+        id: create_release  
+        uses: actions/create-release@v1  
+        env:  
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
+        with:  
+          tag_name: qnn-vad-asr-simulated-streaming-${{ github.run_number }}  
+          release_name: QNN VAD ASR Simulated Streaming ${{ github.run_number }}  
+          draft: false  
+          prerelease: false  
+  
+      - name: Upload APK to Release  
+        uses: actions/upload-release-asset@v1  
+        env:  
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
+        with:  
+          upload_url: ${{ steps.create_release.outputs.upload_url }}  
+          asset_path: ./apks/sherpa-onnx-*-arm64-v8a-*.apk  
+          asset_name: sherpa-onnx-qnn-vad-asr-simulated-streaming-arm64-v8a.apk  
+          asset_content_type: application/vnd.android.package-archive
