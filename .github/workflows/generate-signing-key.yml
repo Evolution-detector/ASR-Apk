@@ -12,16 +12,7 @@ jobs:
       - name: Generate release keystore  
         shell: bash  
         run: |  
-          # 生成正式签名密钥库  
-          keytool -genkeypair -v \  
-            -keystore release.keystore \  
-            -alias release-key \  
-            -keyalg RSA \  
-            -keysize 2048 \  
-            -validity 10000 \  
-            -storepass release123 \  
-            -keypass release123 \  
-            -dname "CN=Release Key, OU=Mobile, O=Your Company, L=Your City, ST=Your State, C=US"  
+          keytool -genkeypair -v -keystore release.keystore -alias release-key -keyalg RSA -keysize 2048 -validity 10000 -storepass release123 -keypass release123 -dname "CN=Release Key, OU=Mobile, O=Your Company, L=Your City, ST=Your State, C=US"  
             
           echo "Keystore generated successfully"  
           ls -la release.keystore  
