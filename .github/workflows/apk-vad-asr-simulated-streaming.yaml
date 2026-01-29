@@ -59,11 +59,17 @@ jobs:
           BUILD_TOOL_VERSION=$(ls /usr/local/lib/android/sdk/build-tools/ | tail -n 1)  
           echo "BUILD_TOOL_VERSION=$BUILD_TOOL_VERSION" >> $GITHUB_ENV  
   
+      - name: Set version variable  
+        shell: bash  
+        run: |  
+          SHERPA_ONNX_VERSION=$(grep "SHERPA_ONNX_VERSION" ./CMakeLists.txt  | cut -d " " -f 2  | cut -d '"' -f 2)  
+          echo "SHERPA_ONNX_VERSION=$SHERPA_ONNX_VERSION" >> $GITHUB_ENV  
+  
       - name: Generate build script  
         shell: bash  
         run: |  
           cd scripts/apk  
-          ./generate-vad-asr-apk-script.py --total ${{ matrix.total }} --index ${{ matrix.index }}   
+          ./generate-vad-asr-apk-script.py --total ${{ matrix.total }} --index ${{ matrix.index }}  
           chmod +x build-apk-vad-asr-simulate-streaming.sh  
           mv -v ./build-apk-vad-asr-simulate-streaming.sh ../..  
   
@@ -95,12 +101,22 @@ jobs:
           draft: false  
           prerelease: false  
   
-      - name: Upload APK to Release  
+      - name: Upload APK 1 (Paraformer)  
         uses: actions/upload-release-asset@v1  
         env:  
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
         with:  
           upload_url: ${{ steps.create_release.outputs.upload_url }}  
-          asset_path: ./apks/sherpa-onnx-*-arm64-v8a-*.apk  
-          asset_name: sherpa-onnx-vad-asr-simulated-streaming-arm64-v8a.apk  
+          asset_path: ./apks/sherpa-onnx-${{ env.SHERPA_ONNX_VERSION }}-arm64-v8a-simulated_streaming_asr-zh_en-paraformer.apk  
+          asset_name: sherpa-onnx-vad-asr-simulated-streaming-zh_en-paraformer.apk  
+          asset_content_type: application/vnd.android.package-archive  
+  
+      - name: Upload APK 2 (SenseVoice)  
+        uses: actions/upload-release-asset@v1  
+        env:  
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
+        with:  
+          upload_url: ${{ steps.create_release.outputs.upload_url }}  
+          asset_path: ./apks/sherpa-onnx-${{ env.SHERPA_ONNX_VERSION }}-arm64-v8a-simulated_streaming_asr-zh_en_ko_ja_yue-sense_voice_2025_09_09_int8.apk  
+          asset_name: sherpa-onnx-vad-asr-simulated-streaming-sense-voice.apk  
           asset_content_type: application/vnd.android.package-archive
