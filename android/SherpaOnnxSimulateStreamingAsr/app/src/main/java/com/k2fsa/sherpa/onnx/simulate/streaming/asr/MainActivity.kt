@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.core.app.ActivityCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -76,7 +77,7 @@ class MainActivity : ComponentActivity() {
             Log.e(TAG, "Audio record is disallowed")
             Toast.makeText(
                 this,
-                "This App needs to access the microphone",
+                stringResource(R.string.microphone_permission_required),
                 Toast.LENGTH_SHORT
             )
                 .show()
@@ -101,7 +102,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
                 ),
                 title = {
                     Text(
-                        "Next-gen Kaldi: Simulate real-time speech recognition",
+                        stringResource(R.string.app_title),
                         fontWeight = FontWeight.Bold,
                     )
                 },
