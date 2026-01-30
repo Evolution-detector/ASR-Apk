@@ -79,6 +79,10 @@ fun HomeScreen() {
     var punctuationState by remember { mutableStateOf(PunctuationState.NONE) }  
     var punctuationTimerJob by remember { mutableStateOf<Job?>(null) }  
     var lastSegmentText by remember { mutableStateOf("") }  
+      
+    // 累积的文本内容，用于避免覆盖  
+    var accumulatedText by remember { mutableStateOf("") }  
+    var currentSegmentDisplay by remember { mutableStateOf("") }  
   
     // we change asrModelType in github actions  
     val asrModelType = 15  
@@ -97,6 +101,71 @@ fun HomeScreen() {
         // Back on the Main thread: update UI state  
         isInitialized = true  
         recognizedText = ""  
+        accumulatedText = ""  
+    }  
+  
+    // 字符类型判断函数  
+    fun isChineseChar(char: Char): Boolean {  
+        return char.code in 0x4E00..0x9FA5  
+    }  
+  
+    fun isWesternChar(char: Char): Boolean {  
+        return char.code in 0x0020..0x007E // ASCII printable characters  
+    }  
+  
+    fun isFullWidthPunctuation(char: Char): Boolean {  
+        return char.code in 0x3000..0x303F || char.code in 0xFF00..0xFFEF  
+    }  
+  
+    // 步骤1：片段内部标准化 - 在中英混合内容中添加空格  
+    fun normalizeInternalSpacing(rawSegment: String): String {  
+        if (rawSegment.isEmpty()) return rawSegment  
+          
+        val result = StringBuilder()  
+        var i = 0  
+          
+        while (i < rawSegment.length) {  
+            val currentChar = rawSegment[i]  
+            result.append(currentChar)  
+              
+            if (i < rawSegment.length - 1) {  
+                val nextChar = rawSegment[i + 1]  
+                  
+                // 检查是否需要插入空格：中文字符紧邻西文字符  
+                if ((isChineseChar(currentChar) && isWesternChar(nextChar)) ||  
+                    (isWesternChar(currentChar) && isChineseChar(nextChar))) {  
+                    result.append(' ')  
+                }  
+            }  
+            i++  
+        }  
+          
+        return result.toString()  
+    }  
+  
+    // 步骤2：边界拼接 - 处理现有文本与新文本段的连接  
+    fun concatenateWithExistingText(existingText: String, newSegment: String): String {  
+        if (existingText.isEmpty()) return newSegment  
+        if (newSegment.isEmpty()) return existingText  
+          
+        val charTail = existingText.lastOrNull() ?: return existingText + newSegment  
+        val charHead = newSegment.firstOrNull() ?: return existingText  
+          
+        return when {  
+            // 全角标点豁免：直接拼接  
+            isFullWidthPunctuation(charTail) -> {  
+                existingText + newSegment  
+            }  
+            // 异类间隙：中文字符与西文字符相邻，加空格  
+            (isChineseChar(charTail) && isWesternChar(charHead)) ||  
+            (isWesternChar(charTail) && isChineseChar(charHead)) -> {  
+                existingText + " " + newSegment  
+            }  
+            // 默认拼接：同类相连或其他情况  
+            else -> {  
+                existingText + newSegment  
+            }  
+        }  
     }  
   
     // 标点晋升函数  
@@ -105,22 +174,25 @@ fun HomeScreen() {
             PunctuationState.NONE -> {  
                 punctuationState = PunctuationState.COMMA  
                 // 添加逗号  
-                if (recognizedText.isNotEmpty() && !recognizedText.endsWith("，")) {  
-                    recognizedText += "，"  
+                if (accumulatedText.isNotEmpty() && !accumulatedText.endsWith("，")) {  
+                    accumulatedText += "，"  
+                    updateDisplayText()  
                 }  
             }  
             PunctuationState.COMMA -> {  
                 punctuationState = PunctuationState.PERIOD  
                 // 替换逗号为句号  
-                if (recognizedText.endsWith("，")) {  
-                    recognizedText = recognizedText.dropLast(1) + "。"  
+                if (accumulatedText.endsWith("，")) {  
+                    accumulatedText = accumulatedText.dropLast(1) + "。"  
+                    updateDisplayText()  
                 }  
             }  
             PunctuationState.PERIOD -> {  
                 punctuationState = PunctuationState.PARAGRAPH  
                 // 添加换行符  
-                if (recognizedText.isNotEmpty()) {  
-                    recognizedText += "\n"  
+                if (accumulatedText.isNotEmpty()) {  
+                    accumulatedText += "\n"  
+                    updateDisplayText()  
                 }  
             }  
             PunctuationState.PARAGRAPH -> {  
@@ -131,6 +203,15 @@ fun HomeScreen() {
         // 更新UI滚动  
         coroutineScope.launch {  
             scrollState.scrollTo(scrollState.maxValue)  
+        }  
+    }  
+      
+    // 更新显示文本  
+    fun updateDisplayText() {  
+        recognizedText = if (currentSegmentDisplay.isNotEmpty()) {  
+            concatenateWithExistingText(accumulatedText, currentSegmentDisplay)  
+        } else {  
+            accumulatedText  
         }  
     }  
   
@@ -201,6 +282,7 @@ fun HomeScreen() {
                 // 重置标点状态  
                 punctuationState = PunctuationState.NONE  
                 lastSegmentText = ""  
+                currentSegmentDisplay = ""  
   
                 CoroutineScope(Dispatchers.IO).launch {  
                     Log.i(TAG, "processing samples")  
@@ -263,6 +345,7 @@ fun HomeScreen() {
                                       
                                     // 新语音段开始时，清空当前段文本  
                                     currentSegmentText = ""  
+                                    currentSegmentDisplay = ""  
                                 }  
                             }  
   
@@ -283,31 +366,10 @@ fun HomeScreen() {
                                 if (lastText.isNotBlank()) {  
                                     currentSegmentText = lastText  
                                       
-                                    // 实时显示当前段的结果（不带标点）  
-                                    if (recognizedText.isEmpty()) {  
-                                        recognizedText = currentSegmentText  
-                                    } else {  
-                                        // 移除最后的标点，显示纯文本  
-                                        val baseText = if (recognizedText.endsWith("，") ||   
-                                                         recognizedText.endsWith("。") ||  
-                                                         recognizedText.endsWith("\n")) {  
-                                            recognizedText.dropLast(1)  
-                                        } else {  
-                                            recognizedText  
-                                        }  
-                                          
-                                        // 按段落分割，替换最后一段  
-                                        val paragraphs = baseText.split("\n").toMutableList()  
-                                        if (paragraphs.isNotEmpty()) {  
-                                            val lastParagraph = paragraphs.last()  
-                                            val segments = lastParagraph.split("，").toMutableList()  
-                                            if (segments.isNotEmpty()) {  
-                                                segments[segments.size - 1] = currentSegmentText  
-                                                paragraphs[paragraphs.size - 1] = segments.joinToString("，")  
-                                                recognizedText = paragraphs.joinToString("\n")  
-                                            }  
-                                        }  
-                                    }  
+                                    // 应用文本标准化处理，只更新当前段显示  
+                                    val cleanSegment = normalizeInternalSpacing(currentSegmentText)  
+                                    currentSegmentDisplay = cleanSegment  
+                                    updateDisplayText()  
   
                                     coroutineScope.launch {  
                                         scrollState.scrollTo(scrollState.maxValue)  
@@ -334,30 +396,11 @@ fun HomeScreen() {
                                 if (result.text.isNotBlank()) {  
                                     lastSegmentText = result.text  
                                       
-                                    // 更新显示文本  
-                                    if (recognizedText.isEmpty()) {  
-                                        recognizedText = lastSegmentText  
-                                    } else {  
-                                        // 移除最后的标点，添加最终结果  
-                                        val baseText = if (recognizedText.endsWith("，") ||   
-                                                         recognizedText.endsWith("。") ||  
-                                                         recognizedText.endsWith("\n")) {  
-                                            recognizedText.dropLast(1)  
-                                        } else {  
-                                            recognizedText  
-                                        }  
-                                          
-                                        val paragraphs = baseText.split("\n").toMutableList()  
-                                        if (paragraphs.isNotEmpty()) {  
-                                            val lastParagraph = paragraphs.last()  
-                                            val segments = lastParagraph.split("，").toMutableList()  
-                                            if (segments.isNotEmpty()) {  
-                                                segments[segments.size - 1] = lastSegmentText  
-                                                paragraphs[paragraphs.size - 1] = segments.joinToString("，")  
-                                                recognizedText = paragraphs.joinToString("\n")  
-                                            }  
-                                        }  
-                                    }  
+                                    // 应用文本标准化处理，确认并添加到累积文本  
+                                    val cleanSegment = normalizeInternalSpacing(lastSegmentText)  
+                                    accumulatedText = concatenateWithExistingText(accumulatedText, cleanSegment)  
+                                    currentSegmentDisplay = ""  // 清空当前段显示  
+                                    updateDisplayText()  
                                       
                                     // 重置标点状态并开始晋升计时  
                                     punctuationState = PunctuationState.NONE  
@@ -434,6 +477,8 @@ fun HomeScreen() {
                 },  
                 onClearButtonClick = {  
                     recognizedText = ""  
+                    accumulatedText = ""  
+                    currentSegmentDisplay = ""  
                     punctuationState = PunctuationState.NONE  
                     lastSegmentText = ""  
                     stopPunctuationTimer()  
