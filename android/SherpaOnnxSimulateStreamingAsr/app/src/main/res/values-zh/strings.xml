@@ -1,5 +1,6 @@
 <resources>  
     <string name="app_name">离线语音识别工具</string>  
+    <string name="app_title">离线语音识别工具</string>
     <string name="microphone_permission_required">此应用需要使用麦克风（不会泄露隐私）</string>
     <string name="home">首页</string>  
     <string name="help">帮助</string>
