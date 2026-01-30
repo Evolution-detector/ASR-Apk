@@ -17,17 +17,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight  
 import androidx.compose.foundation.layout.fillMaxSize  
 import androidx.compose.foundation.layout.fillMaxWidth  
+import androidx.compose.foundation.layout.padding  
 import androidx.compose.foundation.layout.width  
-import androidx.compose.foundation.lazy.LazyColumn  
-import androidx.compose.foundation.lazy.itemsIndexed  
-import androidx.compose.foundation.lazy.rememberLazyListState  
+import androidx.compose.foundation.rememberScrollState  
 import androidx.compose.foundation.verticalScroll  
 import androidx.compose.material3.Button  
 import androidx.compose.material3.Text  
 import androidx.compose.runtime.Composable  
 import androidx.compose.runtime.LaunchedEffect  
 import androidx.compose.runtime.getValue  
-import androidx.compose.runtime.mutableStateListOf  
 import androidx.compose.runtime.mutableStateOf  
 import androidx.compose.runtime.remember  
 import androidx.compose.runtime.rememberCoroutineScope  
@@ -60,10 +58,11 @@ private var samplesChannel = Channel<FloatArray>(capacity = Channel.UNLIMITED)
 fun HomeScreen() {  
     val context = LocalContext.current  
     val clipboardManager = LocalClipboardManager.current  
+    val preferencesHelper = remember { PreferencesHelper(context) }  
   
     val activity = LocalContext.current as Activity  
     var isStarted by remember { mutableStateOf(false) }  
-    val lazyColumnListState = rememberLazyListState()  
+    val scrollState = rememberScrollState()  
     val coroutineScope = rememberCoroutineScope()  
   
     var isInitialized by remember { mutableStateOf(false) }  
@@ -76,6 +75,7 @@ fun HomeScreen() {
     var punctuationState by remember { mutableStateOf("none") } // none, comma, period, paragraph  
     var punctuationTimerJob by remember { mutableStateOf<Job?>(null) }  
   
+    // Load saved text when app starts  
     LaunchedEffect(Unit) {  
         if (asrModelType >= 9000) {  
             // QNN info display removed for cleaner UI  
@@ -89,6 +89,16 @@ fun HomeScreen() {
   
         // Back on the Main thread: update UI state  
         isInitialized = true  
+          
+        // Load saved recognized text  
+        recognizedText = preferencesHelper.getRecognizedText()  
+    }  
+  
+    // Save text whenever it changes  
+    LaunchedEffect(recognizedText) {  
+        if (isInitialized) {  
+            preferencesHelper.saveRecognizedText(recognizedText)  
+        }  
     }  
   
     // Character type checking functions  
@@ -117,7 +127,7 @@ fun HomeScreen() {
                 val next = text[i + 1]  
                   
                 // Insert space between Chinese and Western characters  
-                if ((isChineseChar(current) && isWesternChar(next)) ||   
+                if ((isChineseChar(current) && isWesternChar(next)) ||       
                     (isWesternChar(current) && isChineseChar(next))) {  
                     result.append(' ')  
                 }  
@@ -142,7 +152,7 @@ fun HomeScreen() {
             }  
               
             // Rule 2: Different character types - add space  
-            (isChineseChar(tailChar) && isWesternChar(headChar)) ||   
+            (isChineseChar(tailChar) && isWesternChar(headChar)) ||       
             (isWesternChar(tailChar) && isChineseChar(headChar)) -> {  
                 existingText + " " + newText  
             }  
@@ -159,7 +169,7 @@ fun HomeScreen() {
         val currentText = recognizedText  
         when (punctuationState) {  
             "none" -> {  
-                if (currentText.isNotEmpty() && !currentText.endsWith("，") &&   
+                if (currentText.isNotEmpty() && !currentText.endsWith("，") &&       
                     !currentText.endsWith("。") && !currentText.endsWith("\n")) {  
                     recognizedText = currentText + "，"  
                     punctuationState = "comma"  
@@ -403,6 +413,7 @@ fun HomeScreen() {
                     recognizedText = ""  
                     punctuationState = "none"  
                     stopPunctuationTimer()  
+                    preferencesHelper.clearRecognizedText() // Clear saved data  
                 }  
             )  
   
@@ -412,8 +423,8 @@ fun HomeScreen() {
                     modifier = Modifier  
                         .fillMaxWidth()  
                         .fillMaxHeight()  
-                        .verticalScroll(rememberLazyListState()),  
-                    paddingValues = PaddingValues(16.dp)  
+                        .verticalScroll(scrollState)  
+                        .padding(16.dp)  
                 )  
             }  
         }  
