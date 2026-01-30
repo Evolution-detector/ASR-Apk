@@ -43,7 +43,9 @@ import com.k2fsa.sherpa.onnx.simulate.streaming.asr.SimulateStreamingAsr
 import com.k2fsa.sherpa.onnx.simulate.streaming.asr.TAG  
 import kotlinx.coroutines.CoroutineScope  
 import kotlinx.coroutines.Dispatchers  
+import kotlinx.coroutines.Job  
 import kotlinx.coroutines.channels.Channel  
+import kotlinx.coroutines.delay  
 import kotlinx.coroutines.launch  
 import kotlinx.coroutines.withContext  
   
@@ -51,6 +53,14 @@ private var audioRecord: AudioRecord? = null
   
 private const val sampleRateInHz = 16000  
 private var samplesChannel = Channel<FloatArray>(capacity = Channel.UNLIMITED)  
+  
+// 标点晋升状态枚举  
+enum class PunctuationState {  
+    NONE,           // 无标点  
+    COMMA,          // 逗号  
+    PERIOD,         // 句号  
+    PARAGRAPH       // 段落  
+}  
   
 @Composable  
 fun HomeScreen() {  
@@ -64,6 +74,11 @@ fun HomeScreen() {
     val coroutineScope = rememberCoroutineScope()  
   
     var isInitialized by remember { mutableStateOf(false) }  
+  
+    // 标点晋升相关状态  
+    var punctuationState by remember { mutableStateOf(PunctuationState.NONE) }  
+    var punctuationTimerJob by remember { mutableStateOf<Job?>(null) }  
+    var lastSegmentText by remember { mutableStateOf("") }  
   
     // we change asrModelType in github actions  
     val asrModelType = 15  
@@ -82,6 +97,79 @@ fun HomeScreen() {
         // Back on the Main thread: update UI state  
         isInitialized = true  
         recognizedText = ""  
+    }  
+  
+    // 标点晋升函数  
+    fun promotePunctuation() {  
+        when (punctuationState) {  
+            PunctuationState.NONE -> {  
+                punctuationState = PunctuationState.COMMA  
+                // 添加逗号  
+                if (recognizedText.isNotEmpty() && !recognizedText.endsWith("，")) {  
+                    recognizedText += "，"  
+                }  
+            }  
+            PunctuationState.COMMA -> {  
+                punctuationState = PunctuationState.PERIOD  
+                // 替换逗号为句号  
+                if (recognizedText.endsWith("，")) {  
+                    recognizedText = recognizedText.dropLast(1) + "。"  
+                }  
+            }  
+            PunctuationState.PERIOD -> {  
+                punctuationState = PunctuationState.PARAGRAPH  
+                // 添加换行符  
+                if (recognizedText.isNotEmpty()) {  
+                    recognizedText += "\n"  
+                }  
+            }  
+            PunctuationState.PARAGRAPH -> {  
+                // 已经是段落，不再晋升  
+            }  
+        }  
+          
+        // 更新UI滚动  
+        coroutineScope.launch {  
+            scrollState.scrollTo(scrollState.maxValue)  
+        }  
+    }  
+  
+    // 开始标点晋升计时  
+    fun startPunctuationTimer() {  
+        // 取消之前的计时器  
+        punctuationTimerJob?.cancel()  
+          
+        punctuationTimerJob = CoroutineScope(Dispatchers.Default).launch {  
+            // 阶段二：500ms后晋升为逗号  
+            delay(500)  
+            if (punctuationState == PunctuationState.NONE) {  
+                withContext(Dispatchers.Main) {  
+                    promotePunctuation()  
+                }  
+            }  
+              
+            // 阶段三：1000ms后晋升为句号  
+            delay(500) // 总计1000ms  
+            if (punctuationState == PunctuationState.COMMA) {  
+                withContext(Dispatchers.Main) {  
+                    promotePunctuation()  
+                }  
+            }  
+              
+            // 阶段四：1500ms后晋升为段落  
+            delay(500) // 总计1500ms  
+            if (punctuationState == PunctuationState.PERIOD) {  
+                withContext(Dispatchers.Main) {  
+                    promotePunctuation()  
+                }  
+            }  
+        }  
+    }  
+  
+    // 停止标点晋升计时（打断机制）  
+    fun stopPunctuationTimer() {  
+        punctuationTimerJob?.cancel()  
+        punctuationTimerJob = null  
     }  
   
     val onRecordingButtonClick: () -> Unit = {  
@@ -109,6 +197,10 @@ fun HomeScreen() {
                 )  
   
                 SimulateStreamingAsr.vad.reset()  
+                  
+                // 重置标点状态  
+                punctuationState = PunctuationState.NONE  
+                lastSegmentText = ""  
   
                 CoroutineScope(Dispatchers.IO).launch {  
                     Log.i(TAG, "processing samples")  
@@ -139,7 +231,7 @@ fun HomeScreen() {
                     var startTime = System.currentTimeMillis()  
                     var lastText = ""  
                     var speechStartOffset = 0  
-                    var currentSegmentText = ""  // 新增：当前语音段的文本  
+                    var currentSegmentText = ""  // 当前语音段的文本  
   
                     while (isStarted) {  
                         for (s in samplesChannel) {  
@@ -156,14 +248,19 @@ fun HomeScreen() {
                                     ).toFloatArray()  
                                 )  
                                 offset += windowSize  
+                                  
+                                // 检测到语音开始（打断机制）  
                                 if (!isSpeechStarted && SimulateStreamingAsr.vad.isSpeechDetected()) {  
                                     isSpeechStarted = true  
-                                    // offset 0.4s  
                                     speechStartOffset = offset - 6400  
                                     if(speechStartOffset < 0) {  
                                         speechStartOffset = 0  
                                     }  
                                     startTime = System.currentTimeMillis()  
+                                      
+                                    // 停止标点晋升计时  
+                                    stopPunctuationTimer()  
+                                      
                                     // 新语音段开始时，清空当前段文本  
                                     currentSegmentText = ""  
                                 }  
@@ -172,7 +269,6 @@ fun HomeScreen() {
                             val elapsed = System.currentTimeMillis() - startTime  
                             if (isSpeechStarted && elapsed > 200) {  
                                 // Run ASR every 0.2 seconds == 200 milliseconds  
-                                // You can change it to some other value  
                                 val stream = SimulateStreamingAsr.recognizer.createStream()  
                                 stream.acceptWaveform(  
                                     buffer.subList(speechStartOffset, offset).toFloatArray(),  
@@ -185,23 +281,35 @@ fun HomeScreen() {
                                 lastText = result.text  
   
                                 if (lastText.isNotBlank()) {  
-                                    // 只更新当前段文本，不直接更新显示文本  
                                     currentSegmentText = lastText  
                                       
-                                    // 实时显示当前段的结果  
+                                    // 实时显示当前段的结果（不带标点）  
                                     if (recognizedText.isEmpty()) {  
                                         recognizedText = currentSegmentText  
                                     } else {  
-                                        // 检查是否需要替换最后一段  
-                                        val segments = recognizedText.split("，").toMutableList()  
-                                        if (segments.isNotEmpty()) {  
-                                            segments[segments.size - 1] = currentSegmentText  
-                                            recognizedText = segments.joinToString("，")  
+                                        // 移除最后的标点，显示纯文本  
+                                        val baseText = if (recognizedText.endsWith("，") ||   
+                                                         recognizedText.endsWith("。") ||  
+                                                         recognizedText.endsWith("\n")) {  
+                                            recognizedText.dropLast(1)  
+                                        } else {  
+                                            recognizedText  
+                                        }  
+                                          
+                                        // 按段落分割，替换最后一段  
+                                        val paragraphs = baseText.split("\n").toMutableList()  
+                                        if (paragraphs.isNotEmpty()) {  
+                                            val lastParagraph = paragraphs.last()  
+                                            val segments = lastParagraph.split("，").toMutableList()  
+                                            if (segments.isNotEmpty()) {  
+                                                segments[segments.size - 1] = currentSegmentText  
+                                                paragraphs[paragraphs.size - 1] = segments.joinToString("，")  
+                                                recognizedText = paragraphs.joinToString("\n")  
+                                            }  
                                         }  
                                     }  
   
                                     coroutineScope.launch {  
-                                        // 滚动到底部  
                                         scrollState.scrollTo(scrollState.maxValue)  
                                     }  
                                 }  
@@ -222,18 +330,38 @@ fun HomeScreen() {
                                 isSpeechStarted = false  
                                 SimulateStreamingAsr.vad.pop()  
   
-                                // VAD结束时，确认最终结果  
+                                // VAD结束时，确认最终结果并开始标点晋升  
                                 if (result.text.isNotBlank()) {  
+                                    lastSegmentText = result.text  
+                                      
+                                    // 更新显示文本  
                                     if (recognizedText.isEmpty()) {  
-                                        recognizedText = result.text  
+                                        recognizedText = lastSegmentText  
                                     } else {  
-                                        // 替换最后一段为最终结果  
-                                        val segments = recognizedText.split("，").toMutableList()  
-                                        if (segments.isNotEmpty()) {  
-                                            segments[segments.size - 1] = result.text  
-                                            recognizedText = segments.joinToString("，")  
+                                        // 移除最后的标点，添加最终结果  
+                                        val baseText = if (recognizedText.endsWith("，") ||   
+                                                         recognizedText.endsWith("。") ||  
+                                                         recognizedText.endsWith("\n")) {  
+                                            recognizedText.dropLast(1)  
+                                        } else {  
+                                            recognizedText  
+                                        }  
+                                          
+                                        val paragraphs = baseText.split("\n").toMutableList()  
+                                        if (paragraphs.isNotEmpty()) {  
+                                            val lastParagraph = paragraphs.last()  
+                                            val segments = lastParagraph.split("，").toMutableList()  
+                                            if (segments.isNotEmpty()) {  
+                                                segments[segments.size - 1] = lastSegmentText  
+                                                paragraphs[paragraphs.size - 1] = segments.joinToString("，")  
+                                                recognizedText = paragraphs.joinToString("\n")  
+                                            }  
                                         }  
                                     }  
+                                      
+                                    // 重置标点状态并开始晋升计时  
+                                    punctuationState = PunctuationState.NONE  
+                                    startPunctuationTimer()  
                                 }  
   
                                 buffer = arrayListOf()  
@@ -252,6 +380,9 @@ fun HomeScreen() {
             audioRecord?.stop()  
             audioRecord?.release()  
             audioRecord = null  
+              
+            // 停止录音时也停止标点计时  
+            stopPunctuationTimer()  
         }  
     }  
   
@@ -283,7 +414,6 @@ fun HomeScreen() {
                 onRecordingButtonClick = onRecordingButtonClick,  
                 onCopyButtonClick = {  
                     if (recognizedText.isNotBlank()) {  
-                        // 直接复制文本，不添加序号  
                         clipboardManager.setText(AnnotatedString(recognizedText))  
   
                         Toast.makeText(  
@@ -304,11 +434,13 @@ fun HomeScreen() {
                 },  
                 onClearButtonClick = {  
                     recognizedText = ""  
+                    punctuationState = PunctuationState.NONE  
+                    lastSegmentText = ""  
+                    stopPunctuationTimer()  
                 }  
             )  
   
             if (recognizedText.isNotBlank()) {  
-                // 替换 LazyColumn 为单个可滚动的 Text 组件  
                 Text(  
                     text = recognizedText,  
                     modifier = Modifier  
