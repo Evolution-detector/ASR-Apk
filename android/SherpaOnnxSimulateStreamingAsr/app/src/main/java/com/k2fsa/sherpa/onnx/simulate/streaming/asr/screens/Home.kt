@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -37,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import com.k2fsa.sherpa.onnx.simulate.streaming.asr.PreferencesHelper
 import com.k2fsa.sherpa.onnx.simulate.streaming.asr.R
@@ -187,16 +189,14 @@ fun HomeScreen() {
         }
     }
 
-    // ==========================================
-    // 修订点：将 stopPunctuationTimer 移动到了 startPunctuationTimer 之前
-    // ==========================================
+    // 修复点1：定义顺序调整，确保 startPunctuationTimer 可以调用 stopPunctuationTimer
     fun stopPunctuationTimer() {
         punctuationTimerJob?.cancel()
         punctuationTimerJob = null
     }
 
     fun startPunctuationTimer() {
-        stopPunctuationTimer() // 现在这里可以正确引用了
+        stopPunctuationTimer()
         punctuationTimerJob = coroutineScope.launch {
             delay(500) // 500ms -> comma
             if (punctuationState == "none") {
@@ -268,8 +268,11 @@ fun HomeScreen() {
                     val windowSize = 512
                     var isSpeechStarted = false
                     var startTime = System.currentTimeMillis()
-                    var lastText = ""
-                    var added = false
+                    
+                    // 修复点2：引入 stableText 机制
+                    // 专门针对 Offline Model 模拟流式输出的场景
+                    // 防止 "上" -> "上课" 变成 "上上课"
+                    var stableText = recognizedText
                     var speechStartOffset = 0
 
                     while (isStarted) {
@@ -278,31 +281,69 @@ fun HomeScreen() {
                                 break
                             }
 
+                            // 1. 累积音频并送入 VAD
                             buffer.addAll(s.toList())
                             while (offset + windowSize < buffer.size) {
                                 SimulateStreamingAsr.vad.acceptWaveform(
-                                    buffer.subList(
-                                        offset,
-                                        offset + windowSize
-                                    ).toFloatArray()
+                                    buffer.subList(offset, offset + windowSize).toFloatArray()
                                 )
                                 offset += windowSize
-                                if (!isSpeechStarted && SimulateStreamingAsr.vad.isSpeechDetected()) {
-                                    isSpeechStarted = true
-                                    // offset 0.4s
-                                    speechStartOffset = offset - 6400
-                                    if(speechStartOffset < 0) {
-                                        speechStartOffset = 0
-                                    }
-                                    startTime = System.currentTimeMillis()
-                                    stopPunctuationTimer()
-                                }
                             }
 
+                            // 2. 检测 VAD 状态
+                            val isCurrentSpeechDetected = SimulateStreamingAsr.vad.isSpeechDetected()
+                            
+                            // === 状态A: 开始说话 ===
+                            if (isCurrentSpeechDetected && !isSpeechStarted) {
+                                isSpeechStarted = true
+                                // 锁定当前屏幕上已有的稳定文本
+                                stableText = recognizedText 
+                                
+                                // 计算本次说话在 buffer 中的起始位置
+                                speechStartOffset = offset - 6400
+                                if (speechStartOffset < 0) speechStartOffset = 0
+                                startTime = System.currentTimeMillis()
+                                stopPunctuationTimer()
+                            } 
+                            
+                            // === 状态B: 停止说话 (检测到静音) ===
+                            if (!isCurrentSpeechDetected && isSpeechStarted) {
+                                isSpeechStarted = false
+                                
+                                // 重点：对 buffer 里剩余的内容做最后一次解码，防止丢掉句尾
+                                if (offset > speechStartOffset) {
+                                     val stream = SimulateStreamingAsr.recognizer.createStream()
+                                     stream.acceptWaveform(
+                                         buffer.subList(speechStartOffset, offset).toFloatArray(),
+                                         sampleRateInHz
+                                     )
+                                     SimulateStreamingAsr.recognizer.decode(stream)
+                                     val result = SimulateStreamingAsr.recognizer.getResult(stream)
+                                     stream.release()
+                                     
+                                     if (result.text.isNotBlank()) {
+                                         val cleanSegment = normalizeInternalSpacing(result.text)
+                                         // 最终合并
+                                         recognizedText = concatenateWithExistingText(stableText, cleanSegment)
+                                     }
+                                }
+
+                                // 将完整的一句话晋升为 stableText
+                                stableText = recognizedText 
+                                
+                                // 清理环境
+                                buffer = arrayListOf()
+                                offset = 0
+                                SimulateStreamingAsr.vad.reset()
+                                
+                                // 启动标点计时器
+                                startPunctuationTimer()
+                            }
+
+                            // === 状态C: 正在说话 (实时预览) ===
                             val elapsed = System.currentTimeMillis() - startTime
                             if (isSpeechStarted && elapsed > 200) {
-                                // Run ASR every 0.2 seconds == 200 milliseconds
-                                // You can change it to some other value
+                                // 每 200ms 解码当前片段
                                 val stream = SimulateStreamingAsr.recognizer.createStream()
                                 stream.acceptWaveform(
                                     buffer.subList(speechStartOffset, offset).toFloatArray(),
@@ -312,52 +353,19 @@ fun HomeScreen() {
                                 val result = SimulateStreamingAsr.recognizer.getResult(stream)
                                 stream.release()
 
-                                lastText = result.text
+                                val lastText = result.text
 
                                 if (lastText.isNotBlank()) {
                                     val cleanSegment = normalizeInternalSpacing(lastText)
-                                    if (recognizedText.isEmpty()) {
-                                        recognizedText = cleanSegment
-                                    } else {
-                                        val concatenated = concatenateWithExistingText(recognizedText, cleanSegment)
-                                        if (concatenated != recognizedText) {
-                                            recognizedText = concatenated
-                                        }
-                                    }
+                                    // 重点：始终是 稳定文本 + 当前完整片段，避免重复
+                                    recognizedText = concatenateWithExistingText(stableText, cleanSegment)
                                 }
-
                                 startTime = System.currentTimeMillis()
                             }
 
+                            // 清理 VAD 队列
                             while (!SimulateStreamingAsr.vad.empty()) {
-                                val stream = SimulateStreamingAsr.recognizer.createStream()
-                                stream.acceptWaveform(
-                                    SimulateStreamingAsr.vad.front().samples,
-                                    sampleRateInHz
-                                )
-                                SimulateStreamingAsr.recognizer.decode(stream)
-                                val result = SimulateStreamingAsr.recognizer.getResult(stream)
-                                stream.release()
-
-                                isSpeechStarted = false
                                 SimulateStreamingAsr.vad.pop()
-
-                                buffer = arrayListOf()
-                                offset = 0
-                                if (lastText.isNotBlank()) {
-                                    val cleanSegment = normalizeInternalSpacing(result.text)
-                                    if (recognizedText.isEmpty()) {
-                                        recognizedText = cleanSegment
-                                    } else {
-                                        val concatenated = concatenateWithExistingText(recognizedText, cleanSegment)
-                                        if (concatenated != recognizedText) {
-                                            recognizedText = concatenated
-                                        }
-                                    }
-                                    
-                                    // Start punctuation timer after final result
-                                    startPunctuationTimer()
-                                }
                             }
                         }
                     }
@@ -421,15 +429,23 @@ fun HomeScreen() {
                 }
             )
 
+            // 修改点3：UI 增强
+            // 使用 SelectionContainer 支持文本选择
+            // 设置 fontSize 为 20.sp, lineHeight 为 26.sp
             if (recognizedText.isNotEmpty()) {
-                Text(
-                    text = recognizedText,
+                SelectionContainer(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight()
-                        .verticalScroll(scrollState)
+                        .weight(1f) // 占据剩余空间，替代 fillMaxHeight 以配合 Column
                         .padding(16.dp)
-                )
+                ) {
+                    Text(
+                        text = recognizedText,
+                        fontSize = 20.sp,
+                        lineHeight = 26.sp,
+                        modifier = Modifier.verticalScroll(scrollState)
+                    )
+                }
             }
         }
     }
