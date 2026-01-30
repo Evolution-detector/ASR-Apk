@@ -2,6 +2,13 @@
     <string name="app_name">离线语音识别工具</string>  
     <string name="app_title">离线语音识别工具</string>
     <string name="microphone_permission_required">此应用需要使用麦克风（不会泄露隐私）</string>
+    <string name="Loading">启动中...请稍候</string>  
+    <string name="copied_to_clipboard">已复制到剪贴板</string>  
+    <string name="nothing_to_copy">没有内容可以复制</string>  
+    <string name="using_qnn">仅高通设备支持，调用 NPU 更快更省电)</string>  
+    <string name="qnn_first_run_time">首次运行需要约 10 秒来启动</string>  
+    <string name="qnn_later_runs">后续运行仅需 1 秒以内</string>  
+    <string name="qualcomm_npu_backend">高通 NPU</string>
     <string name="home">首页</string>  
     <string name="help">帮助</string>
     <string name="start">开始</string>  
