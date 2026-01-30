@@ -2,6 +2,13 @@
     <string name="app_name">Offline Speech Recognition</string>
     <string name="app_title">Offline Speech Recognition</string>
     <string name="microphone_permission_required">This App needs to access the microphone</string>
+    <string name="Loading">Loading... Please wait</string>  
+    <string name="copied_to_clipboard">Copied to clipboard</string>  
+    <string name="nothing_to_copy">Nothing to copy</string>  
+    <string name="using_qnn">Using QNN for Qualcomm NPU (HTP backend)</string>  
+    <string name="qnn_first_run_time">It takes about 10s for the first run to start</string>  
+    <string name="qnn_later_runs">Later runs require less than 1 second</string>  
+    <string name="qualcomm_npu_backend">Qualcomm NPU (HTP backend with QNN)</string>
     <string name="home">Home</string>  
     <string name="help">Help</string>
     <string name="start">Start</string>
