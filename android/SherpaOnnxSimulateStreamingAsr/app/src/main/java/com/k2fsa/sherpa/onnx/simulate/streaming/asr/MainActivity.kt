@@ -136,7 +136,6 @@ fun NavigationHost(navController: NavHostController) {
   
 @Composable  
 fun BottomNavigationBar(navController: NavHostController) {  
-    val context = LocalContext.current  
     NavigationBar {  
         val backStackEntry by navController.currentBackStackEntryAsState()  
         val currentRoute = backStackEntry?.destination?.route  
@@ -153,9 +152,9 @@ fun BottomNavigationBar(navController: NavHostController) {
                     }  
                 },  
                 icon = {  
-                    Icon(imageVector = navItem.image, contentDescription = navItem.title)  
+                    Icon(imageVector = navItem.image, contentDescription = stringResource(navItem.titleResId))  
                 }, label = {  
-                    Text(text = navItem.title)  
+                    Text(text = stringResource(navItem.titleResId))  
                 })  
         }  
     }  
