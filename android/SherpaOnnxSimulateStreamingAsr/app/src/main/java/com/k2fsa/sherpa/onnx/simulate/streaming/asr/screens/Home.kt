@@ -268,8 +268,6 @@ fun HomeScreen() {
                     var isSpeechStarted = false
                     var startTime = System.currentTimeMillis()
                     
-                    // stableText 用于保存“已经说完的句子”
-                    // 防止 Offline Model 模拟流式输出时的重复问题
                     var stableText = recognizedText
                     var speechStartOffset = 0
 
@@ -301,14 +299,18 @@ fun HomeScreen() {
                                 speechStartOffset = offset - 6400
                                 if (speechStartOffset < 0) speechStartOffset = 0
                                 startTime = System.currentTimeMillis()
+                                
+                                // 【核心修复】：停止计时器的同时，重置标点状态
+                                // 否则状态会卡在 last state (如 paragraph)，导致下一次无法进入
                                 stopPunctuationTimer()
+                                punctuationState = "none" 
                             } 
                             
                             // === 状态B: 停止说话 (检测到静音) ===
                             if (!isCurrentSpeechDetected && isSpeechStarted) {
                                 isSpeechStarted = false
                                 
-                                // 重点：对 buffer 里剩余的内容做最后一次解码，防止丢掉句尾
+                                // 对 buffer 里剩余的内容做最后一次解码，防止丢掉句尾
                                 if (offset > speechStartOffset) {
                                      val stream = SimulateStreamingAsr.recognizer.createStream()
                                      stream.acceptWaveform(
@@ -387,7 +389,6 @@ fun HomeScreen() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    // 使用资源引用，实现双语
                     Text(text = stringResource(R.string.Loading))
                 }
             }
@@ -396,7 +397,6 @@ fun HomeScreen() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    // 使用资源引用，实现双语
                     Text(text = stringResource(R.string.qualcomm_npu_backend))
                 }
             }
@@ -410,13 +410,13 @@ fun HomeScreen() {
                         clipboardManager.setText(AnnotatedString(recognizedText))
                         Toast.makeText(
                             context,
-                            context.getString(R.string.copied_to_clipboard), // 使用资源引用
+                            context.getString(R.string.copied_to_clipboard),
                             Toast.LENGTH_SHORT
                         ).show()
                     } else {
                         Toast.makeText(
                             context,
-                            context.getString(R.string.nothing_to_copy), // 使用资源引用
+                            context.getString(R.string.nothing_to_copy),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
