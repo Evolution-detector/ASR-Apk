@@ -189,7 +189,6 @@ fun HomeScreen() {
         }
     }
 
-    // 修复点1：定义顺序调整，确保 startPunctuationTimer 可以调用 stopPunctuationTimer
     fun stopPunctuationTimer() {
         punctuationTimerJob?.cancel()
         punctuationTimerJob = null
@@ -269,9 +268,8 @@ fun HomeScreen() {
                     var isSpeechStarted = false
                     var startTime = System.currentTimeMillis()
                     
-                    // 修复点2：引入 stableText 机制
-                    // 专门针对 Offline Model 模拟流式输出的场景
-                    // 防止 "上" -> "上课" 变成 "上上课"
+                    // stableText 用于保存“已经说完的句子”
+                    // 防止 Offline Model 模拟流式输出时的重复问题
                     var stableText = recognizedText
                     var speechStartOffset = 0
 
@@ -389,7 +387,8 @@ fun HomeScreen() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    Text(text = "Initializing... Please wait")
+                    // 使用资源引用，实现双语
+                    Text(text = stringResource(R.string.Loading))
                 }
             }
             if (asrModelType >= 9000) {
@@ -397,7 +396,8 @@ fun HomeScreen() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    Text(text = "Qualcomm NPU (HTP backend with QNN)")
+                    // 使用资源引用，实现双语
+                    Text(text = stringResource(R.string.qualcomm_npu_backend))
                 }
             }
 
@@ -410,13 +410,13 @@ fun HomeScreen() {
                         clipboardManager.setText(AnnotatedString(recognizedText))
                         Toast.makeText(
                             context,
-                            "Copied to clipboard",
+                            context.getString(R.string.copied_to_clipboard), // 使用资源引用
                             Toast.LENGTH_SHORT
                         ).show()
                     } else {
                         Toast.makeText(
                             context,
-                            "Nothing to copy",
+                            context.getString(R.string.nothing_to_copy), // 使用资源引用
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -429,14 +429,12 @@ fun HomeScreen() {
                 }
             )
 
-            // 修改点3：UI 增强
-            // 使用 SelectionContainer 支持文本选择
-            // 设置 fontSize 为 20.sp, lineHeight 为 26.sp
+            // 支持文本选择，字体大小 20sp
             if (recognizedText.isNotEmpty()) {
                 SelectionContainer(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f) // 占据剩余空间，替代 fillMaxHeight 以配合 Column
+                        .weight(1f)
                         .padding(16.dp)
                 ) {
                     Text(
