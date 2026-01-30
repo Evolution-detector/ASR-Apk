@@ -37,7 +37,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource  
 import androidx.compose.ui.text.AnnotatedString  
 import androidx.compose.ui.unit.dp  
-import androidx.core.app.ActivityCompat  
+import androidx.core.app.ActivityCompat
+import com.k2fsa.sherpa.onnx.simulate.streaming.asr.PreferencesHelper
 import com.k2fsa.sherpa.onnx.simulate.streaming.asr.R  
 import com.k2fsa.sherpa.onnx.simulate.streaming.asr.SimulateStreamingAsr  
 import com.k2fsa.sherpa.onnx.simulate.streaming.asr.TAG  
